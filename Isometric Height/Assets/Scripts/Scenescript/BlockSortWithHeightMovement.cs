@@ -33,7 +33,7 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 	Vector2 movingTileInitialPos=new Vector2(2,2);
 	Vector2 movingTileCartPos=new Vector2();
 	float speed=1;
-	Vector3 movingDirection= new Vector3(0,0,1);
+	Vector3 movingDirection= new Vector3(1,0,1);
 	float floorHeight;
 	float tileZOffset=0;
 	float tileYOffset=0;
@@ -89,7 +89,7 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 		SpriteRenderer sr = movingGO.AddComponent<SpriteRenderer>();//add a sprite renderer
 		sr.sprite=isoBlockSprite;//assign block sprite
 		sr.sortingOrder=1;//this also need to have higher sorting order
-		Color c= new Color(0.35f,0.35f,0.35f);
+		Color c= new Color(0.3f,0.3f,0.3f);
 		sr.color=c;
 		movingGO.transform.position=GetScreenPointFromLevelIndices((int)movingTileInitialPos.x,(int)movingTileInitialPos.y);//place in scene based on level indices
 		movingTileCartPos=new Vector2(movingTileInitialPos.y*tileSize/2,movingTileInitialPos.x*tileSize/2);
@@ -110,12 +110,23 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 			for (int j = 0; j < cols; j++) {
                 int val=floorData[i,j];
 				if(val!=invalidTile){//a valid tile
-					if(val==blockTile){
+					if(val==groundTile){
+						tile = new GameObject("tile"+i.ToString()+"_"+j.ToString());//create new tile
+						tile.transform.localScale=new Vector2(tileSize,tileSize);//size is critical for isometric shape
+						sr = tile.AddComponent<SpriteRenderer>();//add a sprite renderer
+						sr.sprite=tileSprite;//assign tile sprite
+						tmpPos=GetScreenPointFromLevelIndices(i,j);
+						tmpPos.y+=currentFloorHeight;
+						tile.transform.position=tmpPos;
+					}else if(val==blockTile){
 						tile = new GameObject("block"+i.ToString()+"_"+j.ToString());//create new tile
 						tile.transform.localScale=new Vector2(tileSize,tileSize);
 						sr = tile.AddComponent<SpriteRenderer>();//add a sprite renderer
 						sr.sprite=isoBlockSprite;//assign block sprite
 						sr.sortingOrder=depth;
+						float colorValue=1/(0.25f+floorLevel/1.5f);
+						Color c= new Color(colorValue,colorValue,colorValue);
+						sr.color=c;
 						tmpPos=GetScreenPointFromLevelIndices(i,j);
 						tmpPos.y+=currentFloorHeight;
 						tile.transform.position=tmpPos;
@@ -140,12 +151,13 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 
     void Update(){
 		MoveBlock();
+		DepthSort();
 	}
 
     private void MoveBlock()
     {
         movingTileCartPos.x+=movingDirection.x*speed;
-		tileZOffset+=movingDirection.z*speed/3;
+		tileZOffset+=movingDirection.z*speed*4;
 		movingTileCartPos.y+=movingDirection.y*speed;
 		Vector2 tempPt=CartesianToIsometric(new Vector2(movingTileCartPos.x,movingTileCartPos.y));
 		tempPt.x-=middleOffset.x;
@@ -154,7 +166,6 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 		tempPt.y+=tileZOffset;
 		movingGO.transform.position=tempPt;
 		CheckAndSwitchDirection();
-		DepthSort();
     }
 	private void CheckAndSwitchDirection(){
 		//check and switch height
@@ -208,6 +219,7 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 	private void DepthSort()
     {
         float whichFloor=(tileZOffset/floorHeight);
+		float lower=Mathf.Floor(whichFloor);
 		Vector2 tmpPos=movingGO.transform.position;
 		tmpPos.y-=tileZOffset;
 		Vector2 movingTilePos=GetLevelIndicesFromScreenPoint(tmpPos);
@@ -217,23 +229,37 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 		int depth;
 		int totalFloors=3;
 		for(int floor=0;floor<totalFloors;floor++){
-			depth=(floor*(rows*cols))+1;
-			//sort rows before block
-			for (int i = 0; i < blockRowStart; i++) {
-				for (int j = 0; j < cols; j++) {
-					depth=AssignDepth(i,j,depth,floor);
+
+			if(floor<lower||floor>(lower+1)){
+				//there is no need to depth sort with moving block as the block is not in these floors
+				depth=(floor*(rows*cols))+1;
+				for (int i = 0; i < rows; i++) {
+					for (int j = 0; j < cols; j++) {
+						depth=AssignDepth(i,j,depth,floor);
+					}
 				}
-			}
-			//sort columns in same row before the block
-			for (int i = blockRowStart; i < blockRowStart+2; i++) {
-				for (int j = 0; j < blockColStart; j++) {
-					depth=AssignDepth(i,j,depth,floor);
+			}else if(floor==lower){
+				// we need to sort lower floor and the floor just above it together in one go
+				depth=(floor*(rows*cols))+1;
+				int nextFloor=floor+1;
+				if(nextFloor>=totalFloors)nextFloor=floor;
+				//sort rows before block
+				for (int i = 0; i < blockRowStart; i++) {
+					for (int j = 0; j < cols; j++) {
+						depth=AssignDepth(i,j,depth,floor);
+						depth=AssignDepth(i,j,depth,nextFloor);
+					}
 				}
-			}
-			//sort block
-			float lower=Mathf.Floor(whichFloor);
-			//int upper=Mathf.RoundToInt(whichFloor);
-			if(lower==floor||floor==lower+1){
+				//sort columns in same row before the block
+				for (int i = blockRowStart; i < blockRowStart+2; i++) {
+					for (int j = 0; j < blockColStart; j++) {
+						depth=AssignDepth(i,j,depth,floor);
+						depth=AssignDepth(i,j,depth,nextFloor);
+					}
+				}
+				//sort block
+				
+				//int upper=Mathf.RoundToInt(whichFloor);
 				for (int i = blockRowStart; i < blockRowStart+2; i++) {
 					for (int j = blockColStart; j < blockColStart+2; j++) {
 						if(movingTilePos.x==i&&movingTilePos.y==j){
@@ -242,26 +268,24 @@ public class BlockSortWithHeightMovement : MonoBehaviour {
 							depth++;//increment depth
 						}else{
 							depth=AssignDepth(i,j,depth,floor);
+							depth=AssignDepth(i,j,depth,nextFloor);
 						}
 					}
 				}
-			}else{
+				
+				//sort columns in same row after the block
 				for (int i = blockRowStart; i < blockRowStart+2; i++) {
-					for (int j = blockColStart; j < blockColStart+2; j++) {
+					for (int j = blockColStart+2; j < cols; j++) {
 						depth=AssignDepth(i,j,depth,floor);
+						depth=AssignDepth(i,j,depth,nextFloor);
 					}
 				}
-			}
-			//sort columns in same row after the block
-			for (int i = blockRowStart; i < blockRowStart+2; i++) {
-				for (int j = blockColStart+2; j < cols; j++) {
-					depth=AssignDepth(i,j,depth,floor);
-				}
-			}
-			//sort rows after block
-			for (int i = blockRowStart+2; i < rows; i++) {
-				for (int j = 0; j < cols; j++) {
-					depth=AssignDepth(i,j,depth,floor);
+				//sort rows after block
+				for (int i = blockRowStart+2; i < rows; i++) {
+					for (int j = 0; j < cols; j++) {
+						depth=AssignDepth(i,j,depth,floor);
+						depth=AssignDepth(i,j,depth,nextFloor);
+					}
 				}
 			}
 		}
